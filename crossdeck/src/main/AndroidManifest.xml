@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Empty manifest. The SDK needs no permissions, broadcast
+  receivers, or services. The consumer app supplies INTERNET (in
+  every modern Android template by default).
+
+  We deliberately do NOT auto-initialise via a ContentProvider —
+  consumers call `Crossdeck.init(context, options)` themselves.
+  Auto-init via ContentProvider would steal app-startup time and
+  bind the SDK to whichever ApplicationContext was the first to
+  resolve — bad for multi-process apps.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" />

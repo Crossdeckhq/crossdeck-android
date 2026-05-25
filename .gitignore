@@ -1,0 +1,15 @@
+# Gradle build outputs
+.gradle/
+build/
+*/build/
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+local.properties
+
+# Captured per-machine
+.cxx/
+
+# OS
+.DS_Store
