@@ -2,7 +2,7 @@
 
 The Crossdeck SDK for Android (Kotlin, Java-friendly).
 
-> **Status: v1.2.0 — full bank-grade parity.** Modeled line-for-line
+> **Status: v1.4.1 — full bank-grade parity.** Modeled line-for-line
 > on the Web, Node, React Native, and Swift v1.2.0 SDKs. v1.2.0 adds
 > **auto-tracking** (sessions, screen views, tap autocapture),
 > **performance vitals** (cold launch, ANR detection, frame jank),
@@ -37,7 +37,7 @@ dependencyResolutionManagement {
 
 // app/build.gradle.kts
 dependencies {
-    implementation("com.crossdeck:crossdeck:1.0.1")
+    implementation("com.crossdeck:crossdeck:1.4.1")
 }
 ```
 
@@ -46,7 +46,7 @@ dependencies {
 ```groovy
 // app/build.gradle
 dependencies {
-    implementation 'com.crossdeck:crossdeck:1.0.1'
+    implementation 'com.crossdeck:crossdeck:1.4.1'
 }
 ```
 
@@ -207,6 +207,70 @@ Web, Node, React Native, and Swift SDKs.
   default — matches the platform-wide contract. Wire opt-out via
   `setConsent(ConsentState(analytics = false))` for cookie-banner
   / EU AGE-gate flows.
+
+### `CrossdeckContracts` — typed access to the bundled contract registry
+
+The SDK ships the full bank-grade contract registry as an indexed
+JAR resource. Query it at runtime:
+
+```kotlin
+import com.crossdeck.CrossdeckContracts
+import com.crossdeck.ContractPillar
+import com.crossdeck.ContractStatus
+
+for (contract in CrossdeckContracts.all()) {
+    Log.i("crossdeck", "${contract.id} (${contract.pillar.wire})")
+}
+
+val isolation = CrossdeckContracts.byId("per-user-cache-isolation")
+    ?: error("entitlement isolation contract missing")
+check(isolation.status == ContractStatus.ENFORCED)
+
+CrossdeckContracts.byPillar(ContractPillar.ENTITLEMENTS)
+CrossdeckContracts.withStatus(ContractStatus.PROPOSED)
+CrossdeckContracts.findByTestName("identify B makes A entitlements unreachable from in-memory")
+CrossdeckContracts.sdkVersion       // "1.4.1"
+CrossdeckContracts.bundledIn        // "com.crossdeck:crossdeck:1.4.1"
+```
+
+The `Contract` data class + `ContractPillar`/`ContractStatus`/`ContractAppliesTo` enums are public. The binary-stability promise (which fields are guaranteed across patch/minor releases) is documented inline on `Contracts.kt` and in the monorepo's [`contracts/README.md`](https://github.com/VistaApps-za/crossdeck/blob/main/contracts/README.md).
+
+### `cd.reportContractFailure(input)` — surface contract test failures
+
+When a contract test asserts and fails — in your CI, a dogfood run, or a customer integration test — fire a typed `crossdeck.contract_failed` event through the standard `track(...)` pipeline:
+
+```kotlin
+import com.crossdeck.ContractFailureInput
+import com.crossdeck.ContractFailureRunContext
+
+cd.reportContractFailure(ContractFailureInput(
+    contractId = "per-user-cache-isolation",
+    failureReason = "expected isolation across user switch, got cross-read",
+    runContext = if (System.getenv("CI") != null)
+        ContractFailureRunContext.CI
+    else
+        ContractFailureRunContext.DOGFOOD,
+    runId = System.getenv("GITHUB_RUN_ID") ?: java.util.UUID.randomUUID().toString(),
+    testRef = ContractTestRef(
+        file = "EntitlementCacheIsolationTest.kt",
+        name = "identify B makes A entitlements unreachable from in-memory",
+    ),
+))
+```
+
+No new endpoint, no special ingest path — the event lands in the same pipeline every other `track(...)` call does. It surfaces immediately in the Crossdeck dashboard's live event feed, the breakdown chart (group by `contract_id`, `sdk_platform`), and any alert rule with `event = crossdeck.contract_failed`.
+
+Properties stamped on the wire:
+
+| Property | Source |
+|----------|--------|
+| `contract_id` | caller |
+| `sdk_version`, `sdk_platform` | auto-stamped (Android ships `sdk_platform: "android"`) |
+| `failure_reason`, `run_context`, `run_id` | caller |
+| `test_file`, `test_name` | set when `testRef` is provided |
+| arbitrary keys | merged from `input.extra` (reserved keys win) |
+
+`runContext` is one of `CI`, `DOGFOOD`, `CUSTOMER_APP` — the wire vocabulary matches the other SDKs so dashboards collapse cleanly across platforms. For a JUnit `TestWatcher`-driven test reporter that emits one event per failed contract test, see [`contracts/README.md` § Reporting contract failures](https://github.com/VistaApps-za/crossdeck/blob/main/contracts/README.md#reporting-contract-failures-back-to-crossdeck).
 
 ## Platforms
 

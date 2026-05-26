@@ -508,6 +508,35 @@ public class Crossdeck private constructor(
      *
      * Throws only on caller error (empty name) or after `stop()`.
      */
+    /**
+     * Emit `crossdeck.contract_failed` with the canonical property
+     * shape (`contract_id`, `sdk_version`, `sdk_platform`,
+     * `failure_reason`, `run_context`, `run_id`). Goes through the
+     * standard [track] pipeline — same consent gate, same queue,
+     * same ingest, no new endpoint.
+     *
+     * Wire from a JUnit `TestWatcher`, dogfood failure path, or
+     * customer contract-verification harness; see
+     * `contracts/README.md` for the per-test-framework hook recipes.
+     */
+    public fun reportContractFailure(input: ContractFailureInput) {
+        val props: MutableMap<String, Any?> = LinkedHashMap()
+        props["contract_id"] = input.contractId
+        props["sdk_version"] = Sdk.VERSION
+        props["sdk_platform"] = "android"
+        props["failure_reason"] = input.failureReason
+        props["run_context"] = input.runContext.wire
+        props["run_id"] = input.runId
+        input.testRef?.let {
+            props["test_file"] = it.file
+            props["test_name"] = it.name
+        }
+        input.extra?.let { extra ->
+            for ((k, v) in extra) if (!props.containsKey(k)) props[k] = v
+        }
+        track("crossdeck.contract_failed", props)
+    }
+
     @Throws(CrossdeckError::class)
     public fun track(name: String, properties: Map<String, Any?>? = null) {
         assertStarted()

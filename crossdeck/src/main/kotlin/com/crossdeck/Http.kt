@@ -38,7 +38,7 @@ public class HttpSendOutcome(
     public enum class Kind { SUCCESS, RETRYABLE, PERMANENT }
 }
 
-public class HttpClient(
+public open class HttpClient(
     /** API base URL — e.g. https://api.cross-deck.com/v1 */
     public val baseUrl: String,
     public val publicKey: String,
@@ -64,7 +64,7 @@ public class HttpClient(
      * forget, entitlements, purchases/sync, events). `path` is
      * appended to `baseUrl`; `query` is URL-encoded.
      */
-    public fun request(
+    public open fun request(
         method: String,
         path: String,
         body: ByteArray? = null,
@@ -142,7 +142,7 @@ public class HttpClient(
      * is required (each batch has its own stable key for server-
      * side dedup across retries).
      */
-    public fun sendEvents(body: ByteArray, idempotencyKey: String): HttpSendOutcome =
+    public open fun sendEvents(body: ByteArray, idempotencyKey: String): HttpSendOutcome =
         request("POST", "/events", body = body, idempotencyKey = idempotencyKey)
 
     private fun classifyResponse(connection: HttpURLConnection): HttpSendOutcome {

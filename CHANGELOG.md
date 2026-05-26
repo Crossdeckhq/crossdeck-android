@@ -4,6 +4,42 @@ All notable changes to `@cross-deck/android` will be documented in
 this file. Format follows [Keep a Changelog](https://keepachangelog.com/);
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.4.2] — 2026-05-26
+
+Jetpack Compose screen tracking — the Android half of "log in
+tomorrow morning and see what users tapped on yesterday."
+
+**Added:**
+
+- **`com.crossdeck.compose.CrossdeckScreen("Name") { content }`** —
+  public Composable wrapper that fires `page.viewed` with
+  `{ screen, title }` when the screen enters composition and on
+  every `Lifecycle.Event.ON_RESUME` transition. Jetpack Compose
+  hides destinations behind pure functions, so the existing
+  `Activity.onResume` swizzle never fires on a pure-Compose app
+  (one `MainActivity` hosts every NavHost destination). One line
+  per screen and the Pages dashboard populates the same way it
+  does for a web app's URL list. Matches the pattern Mixpanel /
+  Amplitude / PostHog ship on Android; pairs with the
+  Pages-backend change that groups by `screen` when `url` /
+  `path` are absent.
+- **`Modifier.crossdeckScreen(cd, "Name")`** — alternate form for
+  screens that already plumb a `Modifier` chain through the
+  composition. Same `page.viewed` shape; one call per screen-enter
+  via `LaunchedEffect(name)`.
+
+**Build:**
+
+- Compose runtime declared `compileOnly` — non-Compose consumers
+  pay no transitive dependency cost. Hosts that already depend on
+  Compose get the helpers for free; importing
+  `com.crossdeck.compose.*` requires the host to have Compose on
+  the classpath (it would already).
+
+No behavioural change to existing fragment / Activity auto-track —
+those keep firing `page.viewed` automatically via the
+`Activity.onResume` swizzle (unchanged).
+
 ## [1.4.1] — 2026-05-26
 
 Patch — close the dogfood-surfaced gap on the

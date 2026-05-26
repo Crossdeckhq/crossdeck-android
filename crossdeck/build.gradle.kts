@@ -69,10 +69,33 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-process:2.7.0")
     implementation("androidx.lifecycle:lifecycle-common:2.7.0")
 
+    // Compose runtime — compileOnly so non-Compose consumers don't
+    // pay a transitive Compose dependency. The optional Compose
+    // helpers in com.crossdeck.compose only resolve at compile time
+    // for hosts that already depend on Compose.
+    compileOnly("androidx.compose.runtime:runtime:1.6.7")
+    compileOnly("androidx.compose.ui:ui:1.6.7")
+
     // Test surface — pure-JVM unit tests, no Android framework.
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.7.3")
 }
+
+// Bank-grade contracts sidecar — regenerate the JAR-resource
+// `contracts.json` from the monorepo `contracts/**/*.json` source
+// of truth before every build. Wired as a preBuild dependency so
+// gradle builds, AAR assembly, and IDE syncs all see fresh data.
+// Same Node script CI runs in `contract-audit`, so a script-vs-
+// CI drift is structurally impossible.
+val emitContracts = tasks.register<Exec>("emitContracts") {
+    workingDir = rootDir
+    commandLine("node", "scripts/emit-contracts.mjs")
+    // Inputs/outputs let gradle skip re-run when neither changed.
+    inputs.dir(rootProject.file("../../contracts"))
+    inputs.file("build.gradle.kts")
+    outputs.file("src/main/resources/crossdeck/contracts.json")
+}
+tasks.named("preBuild").configure { dependsOn(emitContracts) }
 
 // Publication block — Maven Central / GitHub Packages later. The
 // shape mirrors the Swift Package.swift product declaration.
@@ -81,7 +104,7 @@ publishing {
         register<MavenPublication>("release") {
             groupId = "com.crossdeck"
             artifactId = "crossdeck"
-            version = "1.4.1"
+            version = "1.4.2"
 
             afterEvaluate {
                 from(components["release"])
