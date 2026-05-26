@@ -84,6 +84,7 @@ public class ErrorCapture private constructor() {
         breadcrumbs: () -> List<Breadcrumb>,
         selfHostname: String?,
         capture: (CapturedError) -> Unit,
+        installGlobalHandler: Boolean,
         onFatal: ((Throwable) -> Unit)? = null,
     ) {
         synchronized(lock) {
@@ -93,6 +94,13 @@ public class ErrorCapture private constructor() {
             this.selfHostname = selfHostname
             this.onFatalHook = onFatal
 
+            // ALWAYS wire the routing closure so cd.captureError(...)
+            // works on every project. The global JVM handler is gated
+            // separately by [installGlobalHandler] so consumers running
+            // Firebase Crashlytics / Sentry / Bugsnag as their primary
+            // crash reporter can opt out of our global hook without
+            // losing manual capture from do/catch / runCatching paths.
+            if (!installGlobalHandler) return@synchronized
             if (installed) return@synchronized
             installed = true
 

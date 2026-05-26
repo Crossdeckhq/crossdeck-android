@@ -18,5 +18,5 @@ public object Sdk {
      * "Android SDK" install tile.
      */
     public const val NAME: String = "@cross-deck/android"
-    public const val VERSION: String = "1.3.0"
+    public const val VERSION: String = "1.3.1"
 }

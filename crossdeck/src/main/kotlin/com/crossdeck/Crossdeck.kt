@@ -362,9 +362,13 @@ public class Crossdeck private constructor(
                 ),
             )
 
-            if (options.captureUncaughtExceptions) {
-                client.installErrorCapture()
-            }
+            // ALWAYS wire the manual error-capture routing closure so
+            // cd.captureError(...) works on every project. The global
+            // JVM Thread.setDefaultUncaughtExceptionHandler is gated
+            // separately by options.captureUncaughtExceptions, so
+            // Crashlytics / Sentry consumers keep their primary
+            // global handler intact while manual captures still flow.
+            client.installErrorCapture()
             client.installLifecycleObservers(appCtx)
             client.startFlushTicker()
 
@@ -1343,6 +1347,7 @@ public class Crossdeck private constructor(
             beforeSend = null, // runtime hook applied inside capture closure
             breadcrumbs = { breadcrumbs.snapshot() },
             selfHostname = selfHostname,
+            installGlobalHandler = options.captureUncaughtExceptions,
             onFatal = persistFatal,
             capture = { event ->
                 // Errors-consent gate. Sync read so we don't pay
