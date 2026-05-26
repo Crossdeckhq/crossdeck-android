@@ -43,16 +43,68 @@ public class EntitlementCache(
     private val storage: KeyValueStorage,
     private val staleAfterMs: Long = DEFAULT_ENTITLEMENT_STALE_AFTER_MS,
 ) {
-    private val storageKey = "entitlements"
+    private companion object {
+        /** Anonymous suffix used before identify() has been called. */
+        private const val ANON_SUFFIX = "_anon"
+        /** Index blob tracks every per-user suffix the cache has written —
+         * used by `clearAll()` to scope a logout-wipe. */
+        private const val INDEX_SUFFIX = "_index"
+        /** Storage key prefix; per-user suffix appended at write time. */
+        private const val KEY_PREFIX = "crossdeck:entitlements"
+    }
+
     private val lock = Any()
     private var current: EntitlementSnapshot? = null
     private val subscribers: MutableMap<String, EntitlementSubscriber> = LinkedHashMap()
+    /** v1.4.x bank-grade per-user storage isolation. Default suffix
+     * is the anonymous slot; identify() flips this via [setUserKey]
+     * to `sha256(userId)` so each user's blob lives under a
+     * physically separate storage key. */
+    private var currentSuffix: String = ANON_SUFFIX
+
+    /** Current per-user storage key. */
+    private val storageKey: String
+        get() = "$KEY_PREFIX:$currentSuffix"
+
+    /** Index storage key — JSON array of every suffix written. */
+    private val indexKey: String
+        get() = "$KEY_PREFIX:$INDEX_SUFFIX"
 
     init {
         val blob = storage.getString(storageKey)
         if (!blob.isNullOrEmpty()) {
             decode(blob)?.let { current = it }
         }
+    }
+
+    /**
+     * v1.4.x bank-grade three-layer entitlement-cache isolation
+     * (mirrors Web/RN behaviour):
+     *   (a) Physical key separation — `crossdeck:entitlements:<sha256(userId)>`
+     *       so a user-switch can't physically read prior user's data
+     *       even if the in-memory clear is somehow skipped.
+     *   (b) Unconditional in-memory clear — invoked whenever the
+     *       active suffix changes, even on same-id re-identify
+     *       (a tiny redundant cache rebuild is cheaper than a leak).
+     *   (c) Re-hydrate from the new slot — a returning user observes
+     *       their last-known-good cache immediately.
+     *
+     * Caller (`Crossdeck.identify()` / `reset()`) MUST invoke this
+     * BEFORE the next `write()` so the persisted blob lands under
+     * the right key.
+     */
+    public fun setUserKey(userId: String?) {
+        val nextSuffix = suffixForUserId(userId)
+        synchronized(lock) {
+            currentSuffix = nextSuffix
+            current = null
+            // Re-hydrate from the new slot if anything's there.
+            val blob = storage.getString(storageKey)
+            if (!blob.isNullOrEmpty()) {
+                decode(blob)?.let { current = it }
+            }
+        }
+        notifyAll(current)
     }
 
     /**
@@ -89,8 +141,9 @@ public class EntitlementCache(
         synchronized(lock) {
             changed = (current != snapshot)
             current = snapshot
+            storage.setString(storageKey, encode(snapshot))
+            recordSuffixInIndex(currentSuffix)
         }
-        storage.setString(storageKey, encode(snapshot))
         if (changed) notifyAll(snapshot)
     }
 
@@ -108,11 +161,43 @@ public class EntitlementCache(
         }
     }
 
+    /**
+     * Wipe the CURRENT user's slot only — in-memory + the active
+     * per-user storage key. Used internally when a single user's
+     * cache needs to be invalidated (e.g. on `getEntitlements()`
+     * failure recovery). The full-logout path is [[clearAll]].
+     */
     public fun clear() {
         synchronized(lock) {
             if (current == null) return@synchronized
             current = null
             storage.remove(storageKey)
+            removeSuffixFromIndex(currentSuffix)
+        }
+        notifyAll(null)
+    }
+
+    /**
+     * Logout-grade wipe — bank-grade contract: removes EVERY per-
+     * user entitlement slot the SDK has ever written on this
+     * device, then clears the index. Used by `Crossdeck.reset()`
+     * so a logout on a shared device can never leave another
+     * user's entitlements readable.
+     *
+     * After clearAll(), the cache is back to anonymous + empty.
+     */
+    public fun clearAll() {
+        synchronized(lock) {
+            val suffixes = readIndex()
+            for (suffix in suffixes) {
+                storage.remove("$KEY_PREFIX:$suffix")
+            }
+            // Also remove the anonymous slot explicitly — it may not
+            // have been indexed if cleared before its first write.
+            storage.remove("$KEY_PREFIX:$ANON_SUFFIX")
+            storage.remove(indexKey)
+            current = null
+            currentSuffix = ANON_SUFFIX
         }
         notifyAll(null)
     }
@@ -166,6 +251,52 @@ public class EntitlementCache(
         src.put("subscriptionId", ent.source.subscriptionId)
         o.put("source", src)
         return o
+    }
+
+    // ---- v1.4.x per-user storage isolation: index + suffix helpers ----
+
+    /** Derive a stable suffix for a developerUserId via SHA-256.
+     * Reuses the IdempotencyKey.sha256Hex helper so we ship a
+     * single hash implementation in the SDK. Empty / null userId
+     * lands in the anonymous slot. */
+    private fun suffixForUserId(userId: String?): String {
+        if (userId.isNullOrEmpty()) return ANON_SUFFIX
+        return IdempotencyKey.sha256Hex(userId)
+    }
+
+    /** Read the index of all per-user suffixes the SDK has written. */
+    private fun readIndex(): List<String> {
+        val raw = storage.getString(indexKey) ?: return emptyList()
+        return try {
+            val arr = JSONArray(raw)
+            (0 until arr.length()).map { arr.getString(it) }
+        } catch (_: Throwable) {
+            emptyList()
+        }
+    }
+
+    /** Add a suffix to the persisted index. Idempotent. */
+    private fun recordSuffixInIndex(suffix: String) {
+        val existing = readIndex()
+        if (existing.contains(suffix)) return
+        val arr = JSONArray()
+        for (s in existing) arr.put(s)
+        arr.put(suffix)
+        storage.setString(indexKey, arr.toString())
+    }
+
+    /** Remove a suffix from the persisted index. No-op if absent. */
+    private fun removeSuffixFromIndex(suffix: String) {
+        val existing = readIndex()
+        val next = existing.filter { it != suffix }
+        if (next.size == existing.size) return
+        if (next.isEmpty()) {
+            storage.remove(indexKey)
+        } else {
+            val arr = JSONArray()
+            for (s in next) arr.put(s)
+            storage.setString(indexKey, arr.toString())
+        }
     }
 
     private fun decode(blob: String): EntitlementSnapshot? {

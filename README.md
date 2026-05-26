@@ -182,11 +182,21 @@ Web, Node, React Native, and Swift SDKs.
 - **`anonymousId` persists across launches** until `reset()`.
 - **`reset()` regenerates `anonymousId`** so the next anonymous
   session is not linked to the prior identified user.
-- **Unconditional entitlement clear on identify** — a new
-  `userId` always wipes the prior entitlement snapshot, even when
-  identifying with the same id. Bank-grade contract: a freshly
-  identified user must never observe the prior user's entitlements
-  via any sync read path.
+- **Per-user entitlement cache isolation (v1.4.1).** Bank-grade
+  three-layer contract — a freshly identified user must never
+  observe the prior user's entitlements via any sync read path:
+  - **(a) Physical key separation.** Each user's cache lives under
+    `crossdeck:entitlements:<sha256(userId)>` — distinct from
+    every other user on the device. A botched in-memory wipe
+    cannot cross-read because the storage keys differ.
+  - **(b) Unconditional in-memory wipe on identify.** Every
+    `identify(userId)` flips the active suffix, nilling the
+    snapshot before returning. Even same-id re-identify wipes;
+    a tiny redundant rebuild is cheaper than a leak.
+  - **(c) Logout-grade `reset()` wipe.** `reset()` reads the
+    persisted index and removes every per-user slot on the
+    device — a shared-device logout can never leave another
+    user's entitlements readable.
 
 ### Privacy
 

@@ -648,12 +648,18 @@ public class Crossdeck private constructor(
         }
         val cleanedTraits = sanitiseTraits(traits, scope = "identify.traits")
 
-        // SYNC: set developerUserId + clear entitlements BEFORE we
-        // return. The cache-clear is unconditional (matches Web/
-        // Node/RN/Swift) — a tiny redundant rebuild is cheaper than
-        // a leak.
+        // SYNC: set developerUserId + switch entitlement cache to the
+        // per-user storage slot BEFORE we return. v1.4.x bank-grade
+        // three-layer isolation (matches Web/RN):
+        //   (a) Physical key separation —
+        //       `crossdeck:entitlements:<sha256(userId)>`
+        //   (b) Unconditional in-memory wipe — flips suffix even on
+        //       same-id re-identify; a tiny redundant cache rebuild
+        //       is cheaper than a leak.
+        //   (c) Re-hydrate from the new slot — returning user sees
+        //       their last-known-good cache immediately.
         identity.setDeveloperUserId(userId)
-        entitlements.clear()
+        entitlements.setUserKey(userId)
         options.debugLogger(
             DebugSignal.SDK_CONFIGURED,
             mapOf("user_id" to userId),
@@ -757,8 +763,10 @@ public class Crossdeck private constructor(
         )
 
         // Local wipe FIRST — runs regardless of server outcome.
+        // Logout-grade wipe: every per-user entitlement slot on the
+        // device (matches Web/RN reset() semantics).
         identity.reset()
-        entitlements.clear()
+        entitlements.clearAll()
         superProperties.clear()
         breadcrumbs.clear()
 
@@ -996,7 +1004,12 @@ public class Crossdeck private constructor(
     public fun reset() {
         assertStarted()
         identity.reset()
-        entitlements.clear()
+        // Logout-grade wipe: removes EVERY per-user entitlement
+        // slot on this device (v1.4.x bank-grade isolation —
+        // matches Web/RN reset() semantics). A shared device
+        // can never leave another user's entitlements readable
+        // after a logout.
+        entitlements.clearAll()
         superProperties.clear()
         breadcrumbs.clear()
         options.debugLogger(DebugSignal.SDK_CONFIGURED, emptyMap())
