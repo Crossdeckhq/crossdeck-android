@@ -81,7 +81,7 @@ publishing {
         register<MavenPublication>("release") {
             groupId = "com.crossdeck"
             artifactId = "crossdeck"
-            version = "1.3.1"
+            version = "1.4.0"
 
             afterEvaluate {
                 from(components["release"])

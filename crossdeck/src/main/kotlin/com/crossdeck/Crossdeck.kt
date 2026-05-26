@@ -778,7 +778,7 @@ public class Crossdeck private constructor(
                 return
             }
             throw outcome.error ?: CrossdeckError(
-                type = CrossdeckErrorType.API_ERROR,
+                type = CrossdeckErrorType.INTERNAL_ERROR,
                 code = "forget_failed",
                 message = "/identity/forget did not succeed. Local state already wiped — server retry needed.",
             )
@@ -821,16 +821,27 @@ public class Crossdeck private constructor(
             purchaseToken = purchaseToken,
             appAccountToken = appAccountToken,
         )
+        // Phase 2.2.c — deterministic Idempotency-Key from the
+        // rail-stable identifier. Same JWS / purchaseToken → same
+        // key → backend short-circuits with idempotent_replay:true
+        // on retry. Falls back to the legacy random key only when
+        // no identifier was supplied (shouldn't happen — the
+        // public API validates one is present).
+        val idempotencyKey = IdempotencyKey.deriveForPurchase(
+            rail = rail.wireValue,
+            signedTransactionInfo = signedTransactionInfo,
+            purchaseToken = purchaseToken,
+        ) ?: makeIdempotencyKey()
         val outcome = httpRequest(
             method = "POST",
             path = "/purchases/sync",
             body = encodeJsonBody(body),
-            idempotencyKey = makeIdempotencyKey(),
+            idempotencyKey = idempotencyKey,
         )
         val responseBody = outcome.envelope?.body
         if (outcome.kind != HttpSendOutcome.Kind.SUCCESS || responseBody.isNullOrEmpty()) {
             throw outcome.error ?: CrossdeckError(
-                type = CrossdeckErrorType.API_ERROR,
+                type = CrossdeckErrorType.INTERNAL_ERROR,
                 code = "sync_purchases_failed",
                 message = "/purchases/sync did not succeed.",
             )
@@ -852,6 +863,18 @@ public class Crossdeck private constructor(
                 "entitlement_count" to result.entitlements.size.toString(),
             ),
         )
+        // Phase 3.5 (v1.4.0) — emit purchase.completed so manual
+        // syncPurchases callers show up on the same funnel as the
+        // BillingAutoTrack path. Schema mirrors that path's event
+        // name + rail/productId/subscriptionId so cross-path funnels
+        // reconcile.
+        val firstEnt = result.entitlements.firstOrNull()
+        val props = mutableMapOf<String, Any?>("rail" to rail.wireValue)
+        if (firstEnt != null) {
+            props["productId"] = firstEnt.source.productId
+            props["subscriptionId"] = firstEnt.source.subscriptionId
+        }
+        track("purchase.completed", props)
         return result
     }
 
@@ -891,7 +914,7 @@ public class Crossdeck private constructor(
         if (outcome.kind != HttpSendOutcome.Kind.SUCCESS || responseBody.isNullOrEmpty()) {
             entitlements.markRefreshFailed()
             throw outcome.error ?: CrossdeckError(
-                type = CrossdeckErrorType.API_ERROR,
+                type = CrossdeckErrorType.INTERNAL_ERROR,
                 code = "get_entitlements_failed",
                 message = "/entitlements did not succeed.",
             )
@@ -1002,7 +1025,7 @@ public class Crossdeck private constructor(
      */
     public fun captureMessage(message: String, level: BreadcrumbLevel = BreadcrumbLevel.INFO) {
         val synthetic = CrossdeckError(
-            type = CrossdeckErrorType.UNKNOWN,
+            type = CrossdeckErrorType.INTERNAL_ERROR,
             code = "captured_message",
             message = message,
         )
@@ -1198,47 +1221,127 @@ public class Crossdeck private constructor(
 
     /**
      * Submit a [BillingPurchase] to the backend for cryptographic
-     * verification + entitlement projection. Called from
-     * [handleBillingResult] in BillingAutoTrack.kt.
+     * verification + entitlement projection. Returns a typed
+     * [Result] so the caller observes failure — silent swallow on
+     * a money-path call is forbidden by the bank-grade contract.
      *
      * Same backend contract `syncPurchases()` uses — single contract
      * surface, no shape drift between auto and manual paths.
+     *
+     * `rail = "google"` matches the canonical wire token in
+     * `backend/src/lib/types.ts` (`PaymentRail = "apple" | "stripe"
+     * | "google"`). The /purchases/sync endpoint currently returns
+     * 501 google_not_supported until the Play Developer API
+     * reconciliation worker lights up; the typed failure flows
+     * through unchanged when that happens.
      */
-    internal fun syncBillingPurchaseAsync(purchase: BillingPurchase) {
-        scope.launch {
-            try {
-                val body = JSONObject().apply {
-                    put("rail", "google")
-                    put("productId", purchase.productId)
-                    put("purchaseToken", purchase.purchaseToken)
-                    put("purchaseTimeMillis", purchase.purchaseTimeMillis)
-                    purchase.orderId?.let { put("orderId", it) }
-                    purchase.signature?.let { put("signature", it) }
-                    put("isAcknowledged", purchase.isAcknowledged)
-                }.toString().toByteArray(Charsets.UTF_8)
+    internal suspend fun syncBillingPurchase(purchase: BillingPurchase): Result<Unit> {
+        return try {
+            val body = JSONObject().apply {
+                put("rail", "google")
+                put("productId", purchase.productId)
+                put("purchaseToken", purchase.purchaseToken)
+                put("purchaseTimeMillis", purchase.purchaseTimeMillis)
+                purchase.orderId?.let { put("orderId", it) }
+                purchase.signature?.let { put("signature", it) }
+                put("isAcknowledged", purchase.isAcknowledged)
+            }.toString().toByteArray(Charsets.UTF_8)
 
-                val idempotencyKey = "auto_purch_" + java.util.UUID.randomUUID()
-                    .toString()
-                    .lowercase()
-                    .replace("-", "")
-                val outcome = http.request(
-                    method = "POST",
-                    path = "/purchases/sync",
-                    body = body,
-                    idempotencyKey = idempotencyKey,
-                )
-                if (outcome.kind != HttpSendOutcome.Kind.SUCCESS) {
-                    options.debugLogger(
-                        DebugSignal.SDK_CONFIGURED,
-                        mapOf("auto_billing_sync_failed" to outcome.error?.toString().orEmpty()),
-                    )
-                }
-            } catch (t: Throwable) {
+            // Phase 2.2.c — deterministic Idempotency-Key from the
+            // Google purchaseToken so a retry (network blip, Play
+            // re-delivery, app-crash mid-flight) lands on the same
+            // key + the backend short-circuits with
+            // idempotent_replay:true. Falls back to a fresh random
+            // only when purchaseToken is somehow absent (defensive
+            // — auto-track always supplies one).
+            val idempotencyKey = IdempotencyKey.deriveForPurchase(
+                rail = "google",
+                purchaseToken = purchase.purchaseToken,
+            ) ?: ("auto_purch_" + java.util.UUID.randomUUID()
+                .toString()
+                .lowercase()
+                .replace("-", ""))
+            val outcome = httpRequest(
+                method = "POST",
+                path = "/purchases/sync",
+                body = body,
+                idempotencyKey = idempotencyKey,
+            )
+            mapBillingSyncOutcome(outcome)
+        } catch (t: Throwable) {
+            Result.failure(
+                CrossdeckError(
+                    type = CrossdeckErrorType.INTERNAL_ERROR,
+                    code = "auto_billing_sync_threw",
+                    message = t.message ?: "Auto-billing sync threw an exception.",
+                    cause = t,
+                ),
+            )
+        }
+    }
+
+    /**
+     * Fire-and-forget wrapper used by [handleBillingResult] in
+     * BillingAutoTrack.kt — Play Billing's `PurchasesUpdatedListener`
+     * is a non-suspending callback so the wrapper launches the
+     * suspending [syncBillingPurchase] on the SDK scope.
+     *
+     * Failures are surfaced via THREE independent channels (defense-
+     * in-depth — founder principle 2):
+     *   1. Optional [onResult] callback — programmatic consumer hook.
+     *   2. `purchase.sync_failed` analytics event with typed fields
+     *      (errorType, errorCode, statusCode, productId) — visible
+     *      in dashboards / funnels even when the consumer doesn't
+     *      register a callback.
+     *   3. `options.debugLogger` with the full typed envelope —
+     *      visible in dev-mode logs.
+     */
+    internal fun syncBillingPurchaseAsync(
+        purchase: BillingPurchase,
+        onResult: ((Result<Unit>) -> Unit)? = null,
+    ) {
+        scope.launch {
+            val result = syncBillingPurchase(purchase)
+            result.onFailure { err ->
+                val typed = err as? CrossdeckError
+                val errorType = typed?.type?.wireValue ?: "unknown_error"
+                val errorCode = typed?.code ?: "auto_billing_sync_threw"
+                val statusCode = typed?.statusCode
+                val requestId = typed?.requestId
+
                 options.debugLogger(
                     DebugSignal.SDK_CONFIGURED,
-                    mapOf("auto_billing_sync_threw" to t.javaClass.name),
+                    buildMap {
+                        put("auto_billing_sync_failed", "true")
+                        put("error_type", errorType)
+                        put("error_code", errorCode)
+                        if (statusCode != null) put("status_code", statusCode.toString())
+                        if (requestId != null) put("request_id", requestId)
+                        put("product_id", purchase.productId)
+                    },
                 )
+
+                // Surface the failure as a track-able funnel event so
+                // it's visible in dashboards even without a debug
+                // logger configured. Best-effort: if the SDK has
+                // been stopped between launch + here, swallow the
+                // assertStarted() throw — we've already logged.
+                try {
+                    val props = buildMap<String, Any?> {
+                        put("rail", "google")
+                        put("productId", purchase.productId)
+                        put("purchaseToken", purchase.purchaseToken)
+                        purchase.orderId?.let { put("orderId", it) }
+                        put("errorType", errorType)
+                        put("errorCode", errorCode)
+                        if (statusCode != null) put("statusCode", statusCode)
+                        if (requestId != null) put("requestId", requestId)
+                    }
+                    track("purchase.sync_failed", props)
+                } catch (_: Throwable) {
+                }
             }
+            onResult?.invoke(result)
         }
     }
 
@@ -1510,7 +1613,7 @@ public class Crossdeck private constructor(
         val body = outcome.envelope?.body
         if (outcome.kind != HttpSendOutcome.Kind.SUCCESS || body.isNullOrEmpty()) {
             throw outcome.error ?: CrossdeckError(
-                type = CrossdeckErrorType.API_ERROR,
+                type = CrossdeckErrorType.INTERNAL_ERROR,
                 code = "alias_failed",
                 message = "/identity/alias did not succeed.",
             )
@@ -1560,7 +1663,7 @@ public class Crossdeck private constructor(
         val root = JSONObject(body)
         val crossdeckCustomerId = root.optString("crossdeckCustomerId").takeIf { it.isNotEmpty() }
             ?: throw CrossdeckError(
-                type = CrossdeckErrorType.API_ERROR,
+                type = CrossdeckErrorType.INTERNAL_ERROR,
                 code = "alias_response_invalid",
                 message = "/identity/alias response missing crossdeckCustomerId.",
             )
@@ -1592,7 +1695,7 @@ public class Crossdeck private constructor(
         val root = JSONObject(body)
         val crossdeckCustomerId = root.optString("crossdeckCustomerId").takeIf { it.isNotEmpty() }
             ?: throw CrossdeckError(
-                type = CrossdeckErrorType.API_ERROR,
+                type = CrossdeckErrorType.INTERNAL_ERROR,
                 code = "entitlements_response_invalid",
                 message = "/entitlements response missing crossdeckCustomerId.",
             )
@@ -1614,7 +1717,7 @@ public class Crossdeck private constructor(
         val root = JSONObject(body)
         val crossdeckCustomerId = root.optString("crossdeckCustomerId").takeIf { it.isNotEmpty() }
             ?: throw CrossdeckError(
-                type = CrossdeckErrorType.API_ERROR,
+                type = CrossdeckErrorType.INTERNAL_ERROR,
                 code = "purchase_response_invalid",
                 message = "/purchases/sync response missing crossdeckCustomerId.",
             )

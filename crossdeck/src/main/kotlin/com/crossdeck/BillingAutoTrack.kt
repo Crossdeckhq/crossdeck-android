@@ -66,13 +66,25 @@ public data class BillingPurchase(
  * Forward a Google Play Billing result into Crossdeck — handles
  * both the analytics emission and the backend sync.
  *
+ * The backend sync runs on the SDK's internal scope. Failures DO
+ * NOT silently swallow — they surface as a `purchase.sync_failed`
+ * analytics event (visible in dashboards) AND via the optional
+ * [onSyncResult] callback for programmatic handling (retry,
+ * persist-for-later, etc.).
+ *
  * @param responseCode the BillingResult.responseCode (0 = OK).
  * @param purchases the list of [BillingPurchase] entries to report;
  *   builders convert from `com.android.billingclient.api.Purchase`.
+ * @param onSyncResult optional callback fired once per signed
+ *   purchase after the `/purchases/sync` round-trip completes.
+ *   Default: no-op. Receives a typed [Result] — `Result.failure`
+ *   carries a [CrossdeckError] with `type`, `code`, and
+ *   `statusCode` set.
  */
 public fun Crossdeck.handleBillingResult(
     responseCode: Int,
     purchases: List<BillingPurchase>?,
+    onSyncResult: (BillingPurchase, Result<Unit>) -> Unit = { _, _ -> },
 ) {
     // OK code in BillingClient is 0. Anything else is a user-
     // cancelled / network / config failure that should NOT enqueue
@@ -102,10 +114,42 @@ public fun Crossdeck.handleBillingResult(
         track(name, props)
 
         // Hand the signed payload to the backend for verification.
-        // Best-effort: failures land in the debug logger via the
-        // existing syncPurchases internal contract.
+        // Failures propagate via the onSyncResult callback AND emit
+        // a `purchase.sync_failed` analytics event (defense-in-depth
+        // per founder principle 2).
         if (!purchase.signature.isNullOrEmpty()) {
-            syncBillingPurchaseAsync(purchase)
+            syncBillingPurchaseAsync(purchase) { result ->
+                onSyncResult(purchase, result)
+            }
         }
     }
+}
+
+/**
+ * Pure mapper from an [HttpSendOutcome] into a typed [Result] for
+ * the billing-sync path. Lifted out of [Crossdeck.syncBillingPurchase]
+ * so it's unit-testable without an Android Application context.
+ *
+ * Bank-grade contract: every non-SUCCESS outcome produces a
+ * [Result.failure] carrying a [CrossdeckError] with a populated
+ * `type` and `code`, even if the underlying [HttpSendOutcome.error]
+ * was null (defensive). Callers can match on `code` to
+ * distinguish synthetic failures from real backend envelopes.
+ */
+internal fun mapBillingSyncOutcome(outcome: HttpSendOutcome): Result<Unit> {
+    if (outcome.kind == HttpSendOutcome.Kind.SUCCESS) {
+        return Result.success(Unit)
+    }
+    val existing = outcome.error
+    if (existing != null) {
+        return Result.failure(existing)
+    }
+    return Result.failure(
+        CrossdeckError(
+            type = CrossdeckErrorType.INTERNAL_ERROR,
+            code = "auto_billing_sync_failed",
+            message = "/purchases/sync did not succeed.",
+            statusCode = outcome.envelope?.statusCode,
+        ),
+    )
 }

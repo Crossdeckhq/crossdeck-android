@@ -4,6 +4,46 @@ All notable changes to `@cross-deck/android` will be documented in
 this file. Format follows [Keep a Changelog](https://keepachangelog.com/);
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] — 2026-05-26
+
+**Bank-grade reconciliation release.** 6-pillar KPMG-style audit
+closed across SDK + backend. Every behavioural guarantee registered
+in the monorepo's `contracts/` directory with a CI-enforced audit job.
+
+### Added
+
+- **Typed billing-sync errors.** `syncBillingPurchase()` returns
+  `Result<Unit>` carrying a `CrossdeckError` on failure. The
+  fire-and-forget `syncBillingPurchaseAsync()` wrapper now surfaces
+  failures via THREE channels: optional `onResult` callback,
+  `purchase.sync_failed` analytics event with typed metadata, and
+  the existing debug logger with the full typed envelope. Pre-1.4.0
+  swallowed 4xx/5xx into a debug log — silent money-path failure.
+- **Optional `onSyncResult` callback on `handleBillingResult()`** —
+  receives `Result<Unit>` per signed purchase after the
+  `/purchases/sync` round-trip completes.
+- **Deterministic `Idempotency-Key` on `syncPurchases()` +
+  auto-track billing sync** — same JWS/purchaseToken → same key.
+  Cross-SDK parity oracle CI-pinned.
+- **`CrossdeckErrorType.INTERNAL_ERROR` / `.CONFIGURATION_ERROR`
+  added; `.API_ERROR` / `.UNKNOWN` `@Deprecated`** with replaceWith
+  pointers. Backend's `ApiErrorType` never emitted `"api_error"`
+  or `"unknown_error"` on the wire — native pattern-matching on
+  the deprecated cases only matched the SDK-synthesised fallback.
+- **`purchase.completed` on every successful manual
+  `syncPurchases()`** — funnel parity with `BillingAutoTrack`.
+
+### Changed
+
+- **`rail = "google"` confirmed as the canonical wire token** —
+  matches `PaymentRail` in `backend/src/lib/types.ts`. Endpoint
+  currently returns 501 `google_not_supported` until the Play
+  Developer API reconciliation worker lights up; typed failure
+  flows through unchanged when that happens.
+- **Default event-queue flush interval is now 2000ms** (was 5000ms)
+  — cross-SDK parity with Web/Node/RN/Swift on the Stripe-adjacent
+  industry norm.
+
 ## [1.3.0] — 2026-05-25
 
 Bank-grade identity lock — the Android applicationId / package

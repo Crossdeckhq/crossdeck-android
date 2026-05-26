@@ -50,7 +50,14 @@ public typealias PermanentFailureHandler = (events: List<WireEvent>, error: Cros
 
 public data class EventQueueConfig(
     var batchSize: Int = 20,
-    var flushIntervalMs: Long = 5_000L,
+    /**
+     * v1.4.0 Phase 3.3 — flush interval default parity at 2000ms
+     * across every Crossdeck SDK. Pre-v1.4.0 Android used 5000ms,
+     * out of step with Web/Node's 1500ms; v1.4.0 converged on
+     * 2000ms (Stripe-adjacent industry norm). Per-instance
+     * override stays — call sites can still tune it freely.
+     */
+    var flushIntervalMs: Long = 2_000L,
     var maxBufferSize: Int = 1_000,
     var retry: RetryPolicy = RetryPolicy(),
 )
@@ -219,7 +226,7 @@ public class EventQueue(
                         ))
                     } else {
                         val err = outcome.error ?: CrossdeckError(
-                            type = CrossdeckErrorType.API_ERROR,
+                            type = CrossdeckErrorType.INTERNAL_ERROR,
                             code = "retry_exhausted",
                             message = "Retry budget exhausted after ${current.attempt} attempts.",
                         )

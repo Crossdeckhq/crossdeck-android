@@ -151,6 +151,32 @@ Web, Node, React Native, and Swift SDKs.
   WITHOUT invalidating the cache — last-known-good wins until the
   next successful refresh.
 
+### Purchases
+
+- **Single backend contract.** Auto-track (`handleBillingResult`)
+  and manual (`syncPurchases`) share `POST /purchases/sync` —
+  one wire shape, no drift between paths.
+- **Canonical rail token.** Android emits `rail = "google"` on the
+  wire — matches `PaymentRail` in `backend/src/lib/types.ts`. The
+  endpoint currently returns 501 `google_not_supported`; that
+  flows through as a typed failure unchanged when the Play
+  Developer API reconciliation worker lights up.
+- **Typed errors — no silent swallow.** A failed `/purchases/sync`
+  surfaces on THREE independent channels:
+  1. `purchase.sync_failed` analytics event with `errorType`,
+     `errorCode`, `statusCode`, `requestId`, `productId` —
+     visible in dashboards.
+  2. Optional `onSyncResult: (BillingPurchase, Result<Unit>) ->
+     Unit` callback on `handleBillingResult` — `Result.failure`
+     carries the [CrossdeckError] with the typed envelope.
+  3. `options.debugLogger` with the full typed structure
+     (`error_type`, `error_code`, `status_code`, `request_id`,
+     `product_id`) — visible in dev-mode logs.
+- **Funnel event before sync.** `purchase.completed` /
+  `purchase.refunded` fires immediately on a successful billing
+  result; the dashboard row appears even if the backend sync is
+  still in flight.
+
 ### Identity
 
 - **`anonymousId` persists across launches** until `reset()`.

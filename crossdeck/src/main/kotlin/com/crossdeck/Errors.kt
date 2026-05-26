@@ -30,19 +30,58 @@ public enum class CrossdeckErrorType(public val wireValue: String) {
     /** Rate limit hit. Honour `Retry-After`. */
     RATE_LIMIT("rate_limit_error"),
 
-    /** Server-side issue. Retryable. */
-    API_ERROR("api_error"),
+    /**
+     * Server-side issue (5xx). Aligned with the backend's
+     * `ApiErrorType` wire vocabulary (`backend/src/api/v1-errors.ts`)
+     * as of v1.4.0. Pre-1.4.0 the SDK declared `API_ERROR` /
+     * `UNKNOWN` for these cases but the backend NEVER emitted
+     * those tokens — native pattern-matching on `API_ERROR`
+     * matched only the SDK-synthesised fallback, never a real
+     * backend envelope. Use `INTERNAL_ERROR` to match backend
+     * 5xx responses.
+     */
+    INTERNAL_ERROR("internal_error"),
 
-    /** Network refused. */
+    /**
+     * SDK initialisation rejected (bad publishable key, missing
+     * appId, environment mismatch). Mirrors the TS SDKs'
+     * `configuration_error` type. Backend never emits this — it
+     * is a client-side fail-fast surface.
+     */
+    CONFIGURATION_ERROR("configuration_error"),
+
+    /** Network refused. Client-side only — backend never emits this. */
     NETWORK("network_error"),
 
-    /** Catch-all. */
+    /**
+     * **Deprecated as of v1.4.0** — backend never emits
+     * `"api_error"` on the wire. Use `INTERNAL_ERROR` for 5xx
+     * responses. Retained for source-compat; new code MUST NOT
+     * pattern-match on this case.
+     */
+    @Deprecated(
+        message = "Backend never emits 'api_error'; use INTERNAL_ERROR for 5xx responses (v1.4.0 wire vocabulary alignment).",
+        replaceWith = ReplaceWith("INTERNAL_ERROR"),
+        level = DeprecationLevel.WARNING,
+    )
+    API_ERROR("api_error"),
+
+    /**
+     * **Deprecated as of v1.4.0** — backend never emits
+     * `"unknown_error"` on the wire. Catch-all for unmodelled
+     * failure modes; future versions will remove this case and
+     * require a specific type at every call site.
+     */
+    @Deprecated(
+        message = "Backend never emits 'unknown_error'; specific error types preferred (v1.4.0 wire vocabulary alignment).",
+        level = DeprecationLevel.WARNING,
+    )
     UNKNOWN("unknown_error"),
     ;
 
     public companion object {
         public fun fromWire(value: String?): CrossdeckErrorType =
-            values().firstOrNull { it.wireValue == value } ?: UNKNOWN
+            values().firstOrNull { it.wireValue == value } ?: INTERNAL_ERROR
     }
 }
 
@@ -113,13 +152,18 @@ public fun crossdeckErrorFromResponse(
     )
 }
 
+@Suppress("DEPRECATION")
 private fun typeForStatus(status: Int): CrossdeckErrorType = when (status) {
     400, 422 -> CrossdeckErrorType.INVALID_REQUEST
     401 -> CrossdeckErrorType.AUTHENTICATION
     403 -> CrossdeckErrorType.PERMISSION
     429 -> CrossdeckErrorType.RATE_LIMIT
-    in 500..599 -> CrossdeckErrorType.API_ERROR
-    else -> CrossdeckErrorType.UNKNOWN
+    // v1.4.0 — align fallback type with backend wire vocabulary.
+    // Backend's ApiErrorType uses "internal_error" for 5xx, never
+    // "api_error" (which used to be the SDK-only synthesised
+    // fallback that nothing on the wire matched).
+    in 500..599 -> CrossdeckErrorType.INTERNAL_ERROR
+    else -> CrossdeckErrorType.INTERNAL_ERROR
 }
 
 private fun codeForStatus(status: Int): String = when (status) {
