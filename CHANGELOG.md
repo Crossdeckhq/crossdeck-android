@@ -4,6 +4,49 @@ All notable changes to `@cross-deck/android` will be documented in
 this file. Format follows [Keep a Changelog](https://keepachangelog.com/);
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] — 2026-05-25
+
+Bank-grade identity lock — the Android applicationId / package
+name is now sent on every request and enforced server-side,
+mirroring the Origin lock the Web SDK has always had and the
+Bundle ID lock the Swift SDK v1.3.0 ships.
+
+### Added — Package name identity claim
+
+Every HTTP request the SDK fires now carries an
+`X-Crossdeck-Package-Name` header sourced from
+`Context.getPackageName()` — the OS-canonical applicationId
+Android itself uses for Play Store identity.
+
+The Crossdeck backend's `isPackageNameAllowed()` validator
+enforces this against the packageName stored on the Android app
+key. Requests without the header, or with a mismatched value,
+are rejected with `403 / package_name_not_allowed`.
+
+Bank-grade contract — same shape as web Origin / iOS Bundle ID:
+- empty stored packageName on the key → request rejected
+- missing header on the request → request rejected
+- exact-match required
+
+### Changed — `HttpClient` constructor signature
+
+The internal `HttpClient` constructor now requires a `packageName`
+parameter. Consumers who construct `HttpClient` directly (rare —
+the public API is `Crossdeck.start(context, options)` which
+handles this) must pass `context.packageName`.
+
+### Migration
+
+Customers must:
+1. Bump the Gradle / Maven coordinate to `com.crossdeck:crossdeck:1.3.0`.
+2. Rebuild + ship through Google Play.
+3. Confirm `apps.android.packageName` is set on the project's
+   Android app in the Crossdeck dashboard (Apps → Package name
+   editor).
+
+Apps shipped with v1.2.0 or earlier will start receiving 403s
+once the backend enforcement deploys.
+
 ## [1.2.0] — 2026-05-25
 
 Full bank-grade parity with Web/Node/RN/Swift v1.2.0. v1.0.x shipped

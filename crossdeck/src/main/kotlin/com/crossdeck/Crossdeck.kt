@@ -317,6 +317,11 @@ public class Crossdeck private constructor(
             val httpClient = HttpClient(
                 baseUrl = options.effectiveBaseUrl,
                 publicKey = options.publicKey,
+                // Android package name = OS-canonical applicationId.
+                // Sent as X-Crossdeck-Package-Name on every request so
+                // the backend can enforce the bank-grade identity lock
+                // against the packageName stored on the app key.
+                packageName = appCtx.packageName ?: "",
             )
             val queue = EventQueue(
                 http = httpClient,

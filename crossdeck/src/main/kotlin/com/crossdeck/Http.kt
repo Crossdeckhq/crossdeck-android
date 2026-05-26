@@ -42,6 +42,17 @@ public class HttpClient(
     /** API base URL — e.g. https://api.cross-deck.com/v1 */
     public val baseUrl: String,
     public val publicKey: String,
+    /**
+     * Android package name (`context.packageName` / `applicationId`).
+     * Sent as `X-Crossdeck-Package-Name` on every request so the
+     * backend's `isPackageNameAllowed()` can enforce the identity
+     * lock per app key. Bank-grade fail-closed: a request with a
+     * mismatched package name is rejected with 403 /
+     * package_name_not_allowed. Pass empty string if the consumer
+     * really needs to suppress the header (test harnesses) — the
+     * backend will reject those requests too, which is correct.
+     */
+    public val packageName: String,
     private val connectTimeoutMs: Int = 30_000,
     private val readTimeoutMs: Int = 30_000,
 ) {
@@ -82,6 +93,9 @@ public class HttpClient(
                 setRequestProperty("Authorization", "Bearer $publicKey")
                 setRequestProperty("User-Agent", userAgent)
                 setRequestProperty("Crossdeck-Sdk-Version", sdkVersionHeader)
+                if (packageName.isNotEmpty()) {
+                    setRequestProperty("X-Crossdeck-Package-Name", packageName)
+                }
                 if (idempotencyKey != null) {
                     setRequestProperty("Idempotency-Key", idempotencyKey)
                 }
