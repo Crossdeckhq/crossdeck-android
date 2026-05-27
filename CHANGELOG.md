@@ -4,6 +4,39 @@ All notable changes to `@cross-deck/android` will be documented in
 this file. Format follows [Keep a Changelog](https://keepachangelog.com/);
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.4.3] — 2026-05-27
+
+Compose tap-label deep-walk — Stripe-premium parity with Swift v1.4.7.
+
+**Fixed:**
+
+- Jetpack Compose's `Button("Create Image") { … }` renders into an
+  `AndroidComposeView` whose own `contentDescription` + `getText()`
+  are typically empty — the human-readable label lives on a child
+  view inside Compose's internal layout. The auto-track tap
+  capture's legacy reads on the matched view alone came up blank,
+  shipping `element.clicked` events with no label and rendering as
+  "Clicked an element" on the dashboard.
+- `buildTapProps` now descends up to 6 levels into the matched
+  view's subtree (`findDescendantLabel`) looking for a child with
+  non-empty `contentDescription` or a TextView with `getText`. First
+  match wins — closest, shallowest descendant. Stamped under the
+  `text` property so the dashboard's cross-SDK label resolver picks
+  it up via the existing priority chain (no new wire shape).
+- New `textIndicatesPII` helper applies the same `password` /
+  `card number` / `ssn` substring filter to descendant-found labels
+  as to immediate contentDescription — a password field's visible
+  text never lands on the wire.
+- `findTappedView` walk cap raised from 8 to 16 levels — matches
+  Swift's ancestor-walk-16 for parity, and Compose hierarchies on
+  modern apps comfortably exceed 8 from the AndroidComposeView root.
+
+Result: a Compose `Button("Create Image") { … }` tap now ships
+`element.clicked` with the underlying button text resolved, and the
+dashboard / live feed / per-person journey all render
+**"Clicked 'Create Image'"** (or **"Tapped 'Create Image'"** on the
+multi-person live feed) instead of "Clicked an element".
+
 ## [1.4.2] — 2026-05-26
 
 Jetpack Compose screen tracking — the Android half of "log in

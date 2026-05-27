@@ -372,14 +372,17 @@ internal class AutoTracker private constructor() {
     private fun findTappedView(root: View, x: Int, y: Int): View? {
         // Hit-test walk: from root, find the deepest visible view
         // intersecting the touch point with isClickable or content
-        // description set. Cap at 8 levels deep to bound the walk
-        // cost on pathological layouts.
+        // description set. Cap at 16 levels deep — matches Swift's
+        // walk-up-16 for parity. Jetpack Compose hierarchies on
+        // modern apps comfortably exceed 8 levels from the
+        // AndroidComposeView root, and the cap bounds pathological
+        // layouts at a depth a real human couldn't actually tap on.
         var best: View? = null
         var bestDepth = -1
         val location = IntArray(2)
 
         fun visit(v: View, depth: Int) {
-            if (depth > 8) return
+            if (depth > 16) return
             if (v.visibility != View.VISIBLE) return
             v.getLocationOnScreen(location)
             // Window-relative coordinates: subtract the decor's
@@ -454,8 +457,9 @@ internal class AutoTracker private constructor() {
             "viewportX" to x,
             "viewportY" to y,
         )
-        view.contentDescription?.toString()?.takeIf { it.isNotEmpty() }?.let {
-            props["contentDescription"] = it.take(128)
+        val ownContentDesc = view.contentDescription?.toString()?.takeIf { it.isNotEmpty() }
+        if (ownContentDesc != null) {
+            props["contentDescription"] = ownContentDesc.take(128)
         }
         if (view.id != View.NO_ID) {
             try {
@@ -466,14 +470,87 @@ internal class AutoTracker private constructor() {
             }
         }
         // android.widget.TextView (Button extends TextView) — surface text.
-        try {
-            val getTextMethod = view.javaClass.getMethod("getText")
-            val text = (getTextMethod.invoke(view) as? CharSequence)?.toString()
-            if (!text.isNullOrEmpty()) props["text"] = text.take(128)
-        } catch (_: Throwable) {
-            // Not a TextView — fine.
+        val ownText = readViewText(view)
+        if (!ownText.isNullOrEmpty()) {
+            props["text"] = ownText.take(128)
+        }
+        // Bank-grade Compose fallback. Jetpack Compose's `Button("Create
+        // Image") { … }` renders into an AndroidComposeView — the
+        // matched View has no `contentDescription` and no `getText` of
+        // its own, so the legacy reads above come up empty. Descend up
+        // to 6 levels into the matched view's subtree looking for a
+        // child with a non-empty contentDescription or TextView.text.
+        // Mirrors the SwiftUI descendant-search shipped in
+        // sdks/swift v1.4.7. First match wins — closest, shallowest
+        // descendant.
+        if (ownContentDesc.isNullOrEmpty() && ownText.isNullOrEmpty()) {
+            val resolved = findDescendantLabel(view, depth = 0)
+            if (!resolved.isNullOrEmpty() && !textIndicatesPII(resolved)) {
+                // Stamp under `text` so the dashboard's cross-SDK label
+                // resolver picks it up via the same priority chain
+                // (label → text → title → ariaLabel →
+                // accessibilityLabel → contentDescription). No new
+                // wire-shape — same property the legacy TextView path
+                // already wrote to.
+                props["text"] = resolved.take(128)
+            }
         }
         return props
+    }
+
+    /**
+     * Read a view's text via reflection on `getText()` — works for any
+     * TextView subclass including Button, ImageButton (via title),
+     * etc. Compose buttons render into AndroidComposeView, which has
+     * no `getText` and returns null here; the descendant search picks
+     * up the text from the Compose internal layout instead.
+     */
+    private fun readViewText(view: View): String? = try {
+        val getTextMethod = view.javaClass.getMethod("getText")
+        (getTextMethod.invoke(view) as? CharSequence)?.toString()
+    } catch (_: Throwable) {
+        null
+    }
+
+    /**
+     * Descend into the matched view's subtree looking for a child
+     * with text or accessibility content-description. Bounded depth
+     * (6) plus a hard subtree-node cap so a list cell with thousands
+     * of nested layout views can't spin. First match wins — closest,
+     * shallowest descendant.
+     *
+     * The Compose accessibility tree often puts the human-readable
+     * label on a child of the touched view rather than on the
+     * touched view itself; this is the fallback the legacy
+     * contentDescription / getText reads on the matched view alone
+     * can't reach.
+     */
+    private fun findDescendantLabel(view: View, depth: Int): String? {
+        if (depth > 6) return null
+        view.contentDescription?.toString()?.takeIf { it.isNotEmpty() }?.let { return it }
+        val text = readViewText(view)
+        if (!text.isNullOrEmpty()) return text
+        if (view is android.view.ViewGroup) {
+            val n = view.childCount
+            for (i in 0 until n) {
+                val child = view.getChildAt(i) ?: continue
+                val found = findDescendantLabel(child, depth + 1)
+                if (!found.isNullOrEmpty()) return found
+            }
+        }
+        return null
+    }
+
+    /**
+     * String-level PII filter. Reused for both the immediate
+     * contentDescription / TextView.text and the descendant-found
+     * label so a password field's visible text never lands on the
+     * wire — matches the textIndicatesPII helper shipped in
+     * sdks/swift v1.4.7.
+     */
+    private fun textIndicatesPII(text: String): Boolean {
+        val lowered = text.lowercase()
+        return piiLabelSubstrings.any { needle -> lowered.contains(needle) }
     }
 
     private val piiLabelSubstrings = listOf(

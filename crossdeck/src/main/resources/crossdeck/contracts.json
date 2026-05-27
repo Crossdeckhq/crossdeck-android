@@ -1,9 +1,9 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "generatedAt": "2026-05-26T16:37:18.283Z",
+  "generatedAt": "2026-05-27T05:48:58.744Z",
   "sdk": "com.crossdeck:crossdeck",
-  "sdkVersion": "1.4.2",
-  "bundledIn": "com.crossdeck:crossdeck:1.4.2",
+  "sdkVersion": "1.4.3",
+  "bundledIn": "com.crossdeck:crossdeck:1.4.3",
   "count": 7,
   "contracts": [
     {
@@ -30,7 +30,7 @@
       ],
       "registeredAt": "2026-05-26",
       "firstRegisteredIn": "bank-grade reconciliation v1.4.0 — phase 1.1",
-      "bundledIn": "com.crossdeck:crossdeck:1.4.2"
+      "bundledIn": "com.crossdeck:crossdeck:1.4.3"
     },
     {
       "id": "error-envelope-shape",
@@ -69,7 +69,7 @@
       ],
       "registeredAt": "2026-05-26",
       "firstRegisteredIn": "bank-grade reconciliation v1.4.0 — phase 8 (codifies existing contract)",
-      "bundledIn": "com.crossdeck:crossdeck:1.4.2"
+      "bundledIn": "com.crossdeck:crossdeck:1.4.3"
     },
     {
       "id": "flush-interval-parity",
@@ -114,7 +114,7 @@
       ],
       "registeredAt": "2026-05-26",
       "firstRegisteredIn": "bank-grade reconciliation v1.4.0 — phase 3.3",
-      "bundledIn": "com.crossdeck:crossdeck:1.4.2"
+      "bundledIn": "com.crossdeck:crossdeck:1.4.3"
     },
     {
       "id": "idempotency-key-deterministic",
@@ -219,7 +219,7 @@
       ],
       "registeredAt": "2026-05-26",
       "firstRegisteredIn": "bank-grade reconciliation v1.4.0 — phase 2.2.a + 2.2.b + 2.2.c",
-      "bundledIn": "com.crossdeck:crossdeck:1.4.2"
+      "bundledIn": "com.crossdeck:crossdeck:1.4.3"
     },
     {
       "id": "native-error-type-wire-vocab",
@@ -262,7 +262,7 @@
       ],
       "registeredAt": "2026-05-26",
       "firstRegisteredIn": "bank-grade reconciliation v1.4.0 — phase 6.1",
-      "bundledIn": "com.crossdeck:crossdeck:1.4.2"
+      "bundledIn": "com.crossdeck:crossdeck:1.4.3"
     },
     {
       "id": "per-user-cache-isolation",
@@ -341,7 +341,7 @@
       ],
       "registeredAt": "2026-05-26",
       "firstRegisteredIn": "bank-grade reconciliation v1.4.0 — phase 1.3 (web/RN) + dogfood-gap fix (swift + android)",
-      "bundledIn": "com.crossdeck:crossdeck:1.4.2"
+      "bundledIn": "com.crossdeck:crossdeck:1.4.3"
     },
     {
       "id": "sync-purchases-funnel-parity",
@@ -374,7 +374,7 @@
       ],
       "registeredAt": "2026-05-26",
       "firstRegisteredIn": "bank-grade reconciliation v1.4.0 — phase 3.5",
-      "bundledIn": "com.crossdeck:crossdeck:1.4.2"
+      "bundledIn": "com.crossdeck:crossdeck:1.4.3"
     }
   ]
 }
