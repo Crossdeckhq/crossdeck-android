@@ -237,7 +237,7 @@ The `Contract` data class + `ContractPillar`/`ContractStatus`/`ContractAppliesTo
 
 ### `cd.reportContractFailure(input)` — surface contract test failures
 
-When a contract test asserts and fails — in your CI, a dogfood run, or a customer integration test — fire a typed `crossdeck.contract_failed` event through the standard `track(...)` pipeline:
+When a contract test asserts and fails — in your CI, a dogfood run, or a customer integration test — fire a typed `crossdeck.contract_failed` event over the **Crossdeck reliability channel**. This is one-way operational telemetry to the Crossdeck operations team (Privacy Policy §6, "Flow B"); it never enters your `track(...)` pipeline, never shows in your dashboard, never bills against your event quota. The wire shape is schema-locked at [`contracts/diagnostics/contract-failed-payload-schema-lock.json`](https://github.com/VistaApps-za/crossdeck/blob/main/contracts/diagnostics/contract-failed-payload-schema-lock.json):
 
 ```kotlin
 import com.crossdeck.ContractFailureInput
@@ -268,7 +268,9 @@ Properties stamped on the wire:
 | `sdk_version`, `sdk_platform` | auto-stamped (Android ships `sdk_platform: "android"`) |
 | `failure_reason`, `run_context`, `run_id` | caller |
 | `test_file`, `test_name` | set when `testRef` is provided |
-| arbitrary keys | merged from `input.extra` (reserved keys win) |
+| `device_class` | optional, set by caller (categorical bucket — e.g. `"phone"`, `"tablet"`, `"tv"`, `"emulator"`) |
+
+The wire shape is schema-locked at [`contracts/diagnostics/contract-failed-payload-schema-lock.json`](https://github.com/VistaApps-za/crossdeck/blob/main/contracts/diagnostics/contract-failed-payload-schema-lock.json); per-SDK assertion tests gate it on every release. Free-form `extra` keys are not accepted — adding a field requires an amendment to the schema-lock contract first.
 
 `runContext` is one of `CI`, `DOGFOOD`, `CUSTOMER_APP` — the wire vocabulary matches the other SDKs so dashboards collapse cleanly across platforms. For a JUnit `TestWatcher`-driven test reporter that emits one event per failed contract test, see [`contracts/README.md` § Reporting contract failures](https://github.com/VistaApps-za/crossdeck/blob/main/contracts/README.md#reporting-contract-failures-back-to-crossdeck).
 

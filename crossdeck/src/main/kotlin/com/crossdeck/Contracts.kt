@@ -135,19 +135,32 @@ public enum class ContractFailureRunContext(public val wire: String) {
  * shape exactly — the Crossdeck dashboard joins
  * `crossdeck.contract_failed` events across every SDK on
  * `contract_id`, so the property bag has to agree.
+ *
+ * SCHEMA-LOCK: this class's field set is exhaustively named. No
+ * free-form `extra: Map<String, Any?>?` — the schema-lock contract
+ * at `contracts/diagnostics/contract-failed-payload-schema-lock.json`
+ * forbids unbounded fields. Adding a field requires a PR that
+ * amends the contract first, then the public data class.
  */
 public data class ContractFailureInput(
     /** Stable contract id (`per-user-cache-isolation` etc.). */
     public val contractId: String,
-    /** Human-readable failure reason — the assertion message. */
+    /**
+     * Short categorical-ish label — the SDK convention is to keep
+     * this under 128 chars and stable across runs (so dashboards can
+     * group). Never an end-user-supplied string.
+     */
     public val failureReason: String,
     public val runContext: ContractFailureRunContext,
     /** Stable identifier for this verification run. */
     public val runId: String,
     /** Optional pointer back to the failing test, for triage. */
     public val testRef: ContractTestRef? = null,
-    /** Optional extra properties merged into the event payload. */
-    public val extra: Map<String, Any?>? = null,
+    /**
+     * Optional coarse device class, e.g. "phone", "tablet", "tv",
+     * "emulator". A categorical bucket, not a device identifier.
+     */
+    public val deviceClass: String? = null,
 )
 
 private data class LoadedBundle(

@@ -4,6 +4,15 @@ All notable changes to `@cross-deck/android` will be documented in
 this file. Format follows [Keep a Changelog](https://keepachangelog.com/);
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.4.4] — 2026-05-27
+
+`Crossdeck.reportContractFailure(...)` is now single-fire to a
+dedicated reliability endpoint instead of the customer's `track(...)`
+pipeline. Independent-controller flow per Privacy Policy §6;
+schema-locked by `contracts/diagnostics/contract-failed-payload-
+schema-lock.json`. `ContractFailureInput.extra` removed (schema-lock
+forbids unbounded fields); `ContractFailureInput.deviceClass` added.
+
 ## [1.4.3] — 2026-05-27
 
 Compose tap-label deep-walk — Stripe-premium parity with Swift v1.4.7.

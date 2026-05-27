@@ -509,32 +509,34 @@ public class Crossdeck private constructor(
      * Throws only on caller error (empty name) or after `stop()`.
      */
     /**
-     * Emit `crossdeck.contract_failed` with the canonical property
-     * shape (`contract_id`, `sdk_version`, `sdk_platform`,
-     * `failure_reason`, `run_context`, `run_id`). Goes through the
-     * standard [track] pipeline — same consent gate, same queue,
-     * same ingest, no new endpoint.
+     * Emit `crossdeck.contract_failed` to the Crossdeck reliability
+     * endpoint — single-fire, one-way, never visible in the
+     * customer's dashboard. Goes over a dedicated HTTP path with the
+     * reliability publishable key embedded at build time; the
+     * customer's [track] pipeline never carries `crossdeck.*` events.
+     * This is the independent-controller flow described in Privacy
+     * Policy §6 ("Flow B"). The wire shape is fixed by the
+     * schema-lock contract at
+     * `contracts/diagnostics/contract-failed-payload-schema-lock.json`.
      *
      * Wire from a JUnit `TestWatcher`, dogfood failure path, or
      * customer contract-verification harness; see
      * `contracts/README.md` for the per-test-framework hook recipes.
      */
     public fun reportContractFailure(input: ContractFailureInput) {
-        val props: MutableMap<String, Any?> = LinkedHashMap()
-        props["contract_id"] = input.contractId
-        props["sdk_version"] = Sdk.VERSION
-        props["sdk_platform"] = "android"
-        props["failure_reason"] = input.failureReason
-        props["run_context"] = input.runContext.wire
-        props["run_id"] = input.runId
+        val payload: MutableMap<String, String> = LinkedHashMap()
+        payload["contract_id"] = input.contractId
+        payload["sdk_version"] = Sdk.VERSION
+        payload["sdk_platform"] = "android"
+        payload["failure_reason"] = input.failureReason
+        payload["run_context"] = input.runContext.wire
+        payload["run_id"] = input.runId
         input.testRef?.let {
-            props["test_file"] = it.file
-            props["test_name"] = it.name
+            payload["test_file"] = it.file
+            payload["test_name"] = it.name
         }
-        input.extra?.let { extra ->
-            for ((k, v) in extra) if (!props.containsKey(k)) props[k] = v
-        }
-        track("crossdeck.contract_failed", props)
+        input.deviceClass?.let { payload["device_class"] = it }
+        _DiagnosticTelemetry.send(payload)
     }
 
     @Throws(CrossdeckError::class)
