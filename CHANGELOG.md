@@ -4,6 +4,15 @@ All notable changes to `@cross-deck/android` will be documented in
 this file. Format follows [Keep a Changelog](https://keepachangelog.com/);
 this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.4.5] — 2026-06-30
+
+### Docs
+
+- Knowledge-backbone governance release. No runtime API change. This patch
+  republishes the Android SDK source with the Markdoc-backed README/version
+  control surface so Maven/public GitHub source and the Crossdeck knowledge
+  backbone carry the same governed installation and contract documentation.
+
 ## [1.4.4] — 2026-05-27
 
 `Crossdeck.reportContractFailure(...)` is now single-fire to a

@@ -52,10 +52,13 @@ internal object _DiagnosticTelemetry {
 
     /**
      * The reliability project's publishable key. Hardcoded for the
-     * same reason. Replace at provisioning time.
+     * same reason. Provisioned 2026-05-27 — Crossdeck reliability
+     * workspace (app_web_92b2d6a5728a4d). Every customer SDK's
+     * contract_failed events route here for Crossdeck-on-Crossdeck
+     * observability.
      */
     internal const val PUBLISHABLE_KEY: String =
-        "cd_pub_RELIABILITY_PLACEHOLDER_TO_BE_PROVISIONED"
+        "cd_pub_live_9490e7aa029c432abf"
 
     /**
      * Whether the telemetry is enabled. Disabled while the

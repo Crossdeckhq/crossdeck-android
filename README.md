@@ -2,6 +2,14 @@
 
 The Crossdeck SDK for Android (Kotlin, Java-friendly).
 
+> ⚠️ **PRE-RELEASE — not yet published.** This SDK is source-complete in
+> the monorepo but has **not shipped to Maven Central**; the Gradle
+> coordinates below will not resolve yet. The first public release will
+> be **v2.0.0**, born conformant to Event Envelope v1 (the server's
+> wire-format floor for Android is 2.0.0 — earlier builds are never
+> accepted). Until then, treat everything below as a preview of the
+> shipped surface.
+
 > **Status: v1.4.1 — full bank-grade parity.** Modeled line-for-line
 > on the Web, Node, React Native, and Swift v1.2.0 SDKs. v1.2.0 adds
 > **auto-tracking** (sessions, screen views, tap autocapture),
@@ -37,7 +45,7 @@ dependencyResolutionManagement {
 
 // app/build.gradle.kts
 dependencies {
-    implementation("com.crossdeck:crossdeck:1.4.1")
+    implementation("com.crossdeck:crossdeck:1.+")
 }
 ```
 
@@ -46,7 +54,7 @@ dependencies {
 ```groovy
 // app/build.gradle
 dependencies {
-    implementation 'com.crossdeck:crossdeck:1.4.1'
+    implementation 'com.crossdeck:crossdeck:1.+'
 }
 ```
 

@@ -104,7 +104,7 @@ publishing {
         register<MavenPublication>("release") {
             groupId = "com.crossdeck"
             artifactId = "crossdeck"
-            version = "1.4.4"
+            version = "1.4.5"
 
             afterEvaluate {
                 from(components["release"])
@@ -116,7 +116,7 @@ publishing {
                     "Verified subscriptions, entitlements, error capture, " +
                     "and product telemetry on Android — bank-grade native client.",
                 )
-                url.set("https://github.com/VistaApps-za/crossdeck-android")
+                url.set("https://github.com/Crossdeckhq/crossdeck-android")
                 licenses {
                     license {
                         name.set("MIT")
